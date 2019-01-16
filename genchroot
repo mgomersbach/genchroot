@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# -*- coding: utf-8 -*-
+#
+#  genchroot
+#
+#  Copyright 2019 Mark Gomersbach <mark@gomersbach.nl>
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+
+set -e
+set -o pipefail
+
+# Source gentoo functions for output
+if [[ -f /lib/rc/sh/functions.sh ]]; then
+    . /lib/rc/sh/functions.sh
+else
+    . /lib64/rc/sh/functions.sh || die "No Gentoo functions available, exiting"
+fi
+
+# Bring it all together
+main() {
+    checkchroot && makechroot && chrootdive
+    unchroot
+    exit 0
+}
+
+# Set terminal title
+settitle()
+{
+    case $TERM in
+        xterm*)
+          local title="\[\033]0;${@}\007\]"
+        ;;
+        *rxvt*)
+          local title="\[\033]0;${@}\007\]"
+        ;;
+    esac
+    case $SHELL in
+        *zsh)
+          trap 'echo -ne "\e]0;${@}\007"' DEBUG
+        ;;
+        *bash)
+          local prompt=$(echo "$PS1" | sed -e 's/\\\[\\033\]0;.*\\007\\\]//')
+          PS1="${title}${prompt}"
+        ;;
+    esac
+}
+
+# Split output
+debug() {
+    local func=$1
+    local msg=$2
+    settitle ${msg}
+    if [[ "${debug}" == "true" ]]; then
+        echo "${func}(): ${msg}" >&2
+        esyslog "user.info" "genchroot" "${func}(): ${msg}"
+    fi
+}
+
+# Return 1 after fail
+die() {
+    local msg=$1
+    settitle ${msg}
+    eerror "${msg}"
+    kill $$
+    exit 1
+}
+
+# Argument defaults
+chrootbase="/mnt/chrootbase"
+chrootshell=$(which bash)
+stage3tarball="false"
+debug="false"
+help="false"
+nocolor="false"
+logfile="/tmp/$(basename ${0}).log"
+verbose="false"
+
+# Flag handling
+while getopts 'c:s:u:dhnv' flag; do
+  case "${flag}" in
+    c) chrootbase=${OPTARG} ;;
+    s) chrootshell=${OPTARG} ;;
+    u) stage3tarball=${OPTARG} ;;
+    d) debug="true" ;;
+    h) help="true" ;;
+    n) nocolor="true" ;;
+    v) verbose="true" ;;
+    *) eerror "Unexpected option ${flag}" ;;
+  esac
+done
+  chrootlock=${chrootbase}/.$(basename ${0}).lock
+
+# Help message
+usage() {
+    cat <<EOF
+Usage:
+    $0 [options]
+
+Options:
+    -c         Chroot base path
+    -s         Chroot shell
+    -u         Url of stage3 tarball
+    -d         Output debugging messages
+    -h         This
+    -n         No colored output
+    -v         Be verbose (show command output)
+EOF
+}
+
+# Check for help
+if [[ ${help} == "true" ]]; then
+    usage
+    exit 0
+fi
+
+# Add sudo if not root
+SUDO=''
+if (( ${EUID} != 0 )); then
+    SUDO='sudo'
+fi
+
+# Output router
+spawn() {
+    local cmd="${SUDO} ${1}"
+    settitle ${cmd}
+    debug spawn "running command '${cmd}'"
+    rm ${logfile}.cur 2>/dev/null
+    if [[ ${verbose} == "true" ]]; then
+        (eval "${cmd}" 2>&1; echo $? > /tmp/spawn_exitcode) | tee -a ${logfile} ${logfile}.cur
+    else
+        (eval "${cmd}" 2>&1; echo $? > /tmp/spawn_exitcode) | tee -a ${logfile} ${logfile}.cur >/dev/null 2>&1
+    fi
+    spawn_exitcode=$([[ -f /tmp/spawn_exitcode ]] && cat /tmp/spawn_exitcode)
+    rm /tmp/spawn_exitcode &>/dev/null
+
+    return ${spawn_exitcode}
+}
+
+checkchroot() {
+    if [[ -z ${chrootbase} ]]; then
+        die "Filesystem to chroot not set"
+    fi
+    if [[ -z ${chrootshell} ]]; then
+        die "Shell to chroot with not set"
+    fi
+}
+
+makechroot() {
+    if [[ ${stage3tarball} == "false" ]]; then
+        einfo "No stage3 tarball given, assuming existing chroot"
+        spawn "mkdir -p ${chrootbase}" || ewarn "Folder could not be created"
+    else
+        spawn "mkdir ${chrootbase}" || ewarn "Folder could not be created"
+    fi
+}
+
+chrootdive() {
+    (
+        ${SUDO} flock 200
+        spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
+        spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
+        spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
+        spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
+        spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
+        spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
+        ${SUDO} chroot "${chrootbase}" "${chrootshell}" || die "Could not execute ${chrootshell} in ${chrootbase} environment"
+    ) | ${SUDO} tee 200>${chrootlock} || eerror "Could not get a lock at ${chrootlock}"
+    spawn "rm ${chrootlock}"
+}
+
+unchroot() {
+    spawn "umount -l ${chrootbase}/dev{/shm,/pts,}" || ewarn "Could not umount /dev"
+    spawn "umount -l ${chrootbase}/sys" || ewarn "Could not umount /sys"
+    spawn "umount -l ${chrootbase}/proc" || ewarn "Could not umount /proc"
+}
+
+# nocolor overwrites output module
+[[ "${nocolor}" == "true" ]] && unset GOOD WARN BAD HILITE BRACKET NORMAL
+
+if [[ "$0" == "$BASH_SOURCE" ]] ; then
+    main "${@}"
+fi
