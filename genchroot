@@ -23,12 +23,13 @@
 set -e
 set -o pipefail
 
-# Source gentoo functions for output
+# Source Gentoo functions
 if [[ -f /lib/rc/sh/functions.sh ]]; then
     . /lib/rc/sh/functions.sh
 else
     . /lib64/rc/sh/functions.sh || die "No Gentoo functions available, exiting"
 fi
+. /etc/portage/make.conf
 
 # Bring it all together
 main() {
@@ -170,15 +171,30 @@ makechroot() {
 
 chrootdive() {
     (
-        ${SUDO} flock 200
+        flock -e 200 || die "Could not get lock"
         spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
-        spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
-        spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
-        spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
-        spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
-        spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
+        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/proc$"; then
+            spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
+        fi
+        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/sys$"; then
+            spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
+            spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
+        fi
+        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/dev$"; then
+            spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
+            spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
+        fi
+        if [[ -L /dev/shm ]]; then
+          spawn "rm /dev/shm"
+          spawn "mkdir /dev/shm"
+          spawn "mount -t tmpfs -o nosuid,nodev,noexec shm /dev/shm"
+          spawn "chmod 1777 /dev/shm"
+        fi
+        if [[ -d ${DISTDIR} ]]; then
+          spawn "mount --rbind ${DISTDIR} ${chrootbase}/usr/portage/distfiles" || ewarn "Could not bind distfiles"
+        fi
         ${SUDO} chroot "${chrootbase}" "${chrootshell}" || die "Could not execute ${chrootshell} in ${chrootbase} environment"
-    ) | ${SUDO} tee 200>${chrootlock} || eerror "Could not get a lock at ${chrootlock}"
+    ) 200>${chrootlock} || eerror "Could not remove lock at ${chrootlock}"
     spawn "rm ${chrootlock}"
 }
 
@@ -186,6 +202,7 @@ unchroot() {
     spawn "umount -l ${chrootbase}/dev{/shm,/pts,}" || ewarn "Could not umount /dev"
     spawn "umount -l ${chrootbase}/sys" || ewarn "Could not umount /sys"
     spawn "umount -l ${chrootbase}/proc" || ewarn "Could not umount /proc"
+    spawn "umount -l ${chrootbase}/usr/portage/distfiles" || ewarn "Could not umount /usr/portage/distfiles"
 }
 
 # nocolor overwrites output module
