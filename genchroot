@@ -26,13 +26,17 @@ set -o pipefail
 # Source Gentoo functions
 if [[ -f /lib/rc/sh/functions.sh ]]; then
     . /lib/rc/sh/functions.sh
+elif [[ -f /lib64/rc/sh/functions.sh ]]; then
+    . /lib64/rc/sh/functions.sh
 else
-    . /lib64/rc/sh/functions.sh || die "No Gentoo functions available, exiting"
+     die "No Gentoo functions available, exiting"
 fi
 . /etc/portage/make.conf
 
 # Bring it all together
 main() {
+    local args
+    export args="${*}"
     checkchroot && makechroot && chrootdive
     unchroot
     exit 0
@@ -41,20 +45,21 @@ main() {
 # Set terminal title
 settitle()
 {
-    case $TERM in
+    case ${TERM} in
         xterm*)
-          local title="\[\033]0;${@}\007\]"
+          local title="\[\033]0;${*}\007\]"
         ;;
         *rxvt*)
-          local title="\[\033]0;${@}\007\]"
+          local title="\[\033]0;${*}\007\]"
         ;;
     esac
     case $SHELL in
         *zsh)
-          trap 'echo -ne "\e]0;${@}\007"' DEBUG
+          trap '<<<"\e]0;${@}\007"' DEBUG
         ;;
         *bash)
-          local prompt=$(echo "$PS1" | sed -e 's/\\\[\\033\]0;.*\\007\\\]//')
+          local prompt
+          prompt=$(sed -e 's/\\\[\\033\]0;.*\\007\\\]//' <<<"$PS1")
           PS1="${title}${prompt}"
         ;;
     esac
@@ -82,20 +87,22 @@ die() {
 
 # Argument defaults
 chrootbase="/mnt/chrootbase"
-chrootshell=$(which bash)
-stage3tarball="false"
+chrootshell=$(command -v bash)
+tarballtype="false"
+arch="amd64"
 debug="false"
 help="false"
 nocolor="false"
-logfile="/tmp/$(basename ${0}).log"
 verbose="false"
 
 # Flag handling
-while getopts 'c:s:u:dhnv' flag; do
+while getopts 'c:s:t:a:b:dhnv' flag; do
   case "${flag}" in
     c) chrootbase=${OPTARG} ;;
     s) chrootshell=${OPTARG} ;;
-    u) stage3tarball=${OPTARG} ;;
+    t) tarballtype=${OPTARG} ;;
+    a) arch=${OPTARG} ;;
+    b) baseurl=${OPTARG} ;;
     d) debug="true" ;;
     h) help="true" ;;
     n) nocolor="true" ;;
@@ -103,7 +110,14 @@ while getopts 'c:s:u:dhnv' flag; do
     *) eerror "Unexpected option ${flag}" ;;
   esac
 done
-  chrootlock=${chrootbase}/.$(basename ${0}).lock
+
+if [[ -z ${GENTOO_MIRRORS} ]]; then
+    baseurl="${GENTOO_MIRRORS%% *}"
+else
+    baseurl="http://distfiles.gentoo.org/"
+fi
+chrootlock=${chrootbase}/.$(basename ${0}).lock
+logfile="/tmp/$(basename ${0}).log"
 
 # Help message
 usage() {
@@ -113,8 +127,9 @@ Usage:
 
 Options:
     -c         Chroot base path
-    -s         Chroot shell
-    -u         Url of stage3 tarball
+    -s         Chroot shell/executable/script
+    -a         Arch (i.e. amd64)
+    -t         Tarball type (i.e. minimal-nomultilib)
     -d         Output debugging messages
     -h         This
     -n         No colored output
@@ -161,40 +176,56 @@ checkchroot() {
 }
 
 makechroot() {
-    if [[ ${stage3tarball} == "false" ]]; then
-        einfo "No stage3 tarball given, assuming existing chroot"
-        spawn "mkdir -p ${chrootbase}" || ewarn "Folder could not be created"
+    if [[ ${arch} == "false" ]]; then
+        einfo "No arch type given, assuming existing chroot"
     else
-        spawn "mkdir ${chrootbase}" || ewarn "Folder could not be created"
+        spawn "mkdir -p ${chrootbase}" || ewarn "Folder could not be created"
     fi
 }
 
+gettarball() {
+    if ${tarballtype}; then
+        latest=$(wget --quiet ${baseurl}/releases/${arch}/autobuilds/latest-stage3-${arch}-${tarballtype}.txt -O-| tail -n 1 | cut -d " " -f 1)
+    else
+        latest=$(wget --quiet ${baseurl}/releases/${arch}/autobuilds/latest-stage3-${arch}.txt -O-| tail -n 1 | cut -d " " -f 1)
+    fi
+    if [[ -z "${latest}" ]]; then
+        eerror "Could not find latest tarball" && exit 1
+    fi
+    tarname=$(basename "${latest}")
+
+    spawn "wget -q -nc -c --compression=none \"${baseurl}/releases/${arch}/autobuilds/${latest}\" -O \"${chrootbase}/${tarname}\"" || eerror "Could not download stage3 tarball"
+    pushd "${chrootbase}" > /dev/null
+    spawn "tar xpvf \"${tarname}\" --xattrs-include='*.*' --numeric-owner" || eerror "Could not extract stage3"
+    popd > /dev/null
+}
+
 chrootdive() {
-    (
-        flock -e 200 || die "Could not get lock"
-        spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
-        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/proc$"; then
-            spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
-        fi
-        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/sys$"; then
-            spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
-            spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
-        fi
-        if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/dev$"; then
-            spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
-            spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
-        fi
-        if [[ -L /dev/shm ]]; then
-          spawn "rm /dev/shm"
-          spawn "mkdir /dev/shm"
-          spawn "mount -t tmpfs -o nosuid,nodev,noexec shm /dev/shm"
-          spawn "chmod 1777 /dev/shm"
-        fi
-        if [[ -d ${DISTDIR} ]]; then
-          spawn "mount --rbind ${DISTDIR} ${chrootbase}/usr/portage/distfiles" || ewarn "Could not bind distfiles"
-        fi
-        ${SUDO} chroot "${chrootbase}" "${chrootshell}" || die "Could not execute ${chrootshell} in ${chrootbase} environment"
-    ) 200>${chrootlock} || eerror "Could not remove lock at ${chrootlock}"
+    exec {lock_fd}>${chrootlock} || die "Could not get lock"
+    flock -n "$lock_fd" || die "Could not get lock"
+    spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
+    if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/proc$"; then
+        spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
+    fi
+    if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/sys$"; then
+        spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
+        spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
+    fi
+    if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/dev$" ; then
+        spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
+        spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
+    fi
+    if [[ -L /dev/shm ]]; then
+      spawn "rm /dev/shm"
+      spawn "mkdir /dev/shm"
+      spawn "mount -t tmpfs -o nosuid,nodev,noexec shm /dev/shm"
+      spawn "chmod 1777 /dev/shm"
+    fi
+    if [[ -d ${DISTDIR} ]]; then
+      spawn "mount --rbind ${DISTDIR} ${chrootbase}/usr/portage/distfiles" || ewarn "Could not bind distfiles"
+    fi
+    ${SUDO} chroot "${chrootbase}" "${chrootshell}" || die "Could not execute ${chrootshell} in ${chrootbase} environment"
+    flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
     spawn "rm ${chrootlock}"
 }
 
@@ -208,6 +239,6 @@ unchroot() {
 # nocolor overwrites output module
 [[ "${nocolor}" == "true" ]] && unset GOOD WARN BAD HILITE BRACKET NORMAL
 
-if [[ "$0" == "$BASH_SOURCE" ]] ; then
+if [[ "$0" == "${BASH_SOURCE[*]}" ]] ; then
     main "${@}"
 fi
