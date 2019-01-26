@@ -179,7 +179,7 @@ makechroot() {
     if [[ ${arch} == "false" ]]; then
         einfo "No arch type given, assuming existing chroot"
     else
-        spawn "mkdir -p ${chrootbase}" || ewarn "Folder could not be created"
+        spawn "mkdir ${chrootbase}" || die "Folder could not be created or exists!"
         gettarball
     fi
 }
@@ -198,6 +198,7 @@ gettarball() {
     spawn "wget -q -nc -c --compression=none \"${baseurl}/releases/${arch}/autobuilds/${latest}\" -O \"${chrootbase}/${tarname}\"" || eerror "Could not download stage3 tarball"
     pushd "${chrootbase}" > /dev/null
     spawn "tar xpvf \"${tarname}\" --xattrs-include='*.*' --numeric-owner" || eerror "Could not extract stage3"
+    spawn "rm ${tarname}" || einfo "Could not delete stage3 tarball"
     popd > /dev/null
 }
 
