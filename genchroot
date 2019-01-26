@@ -180,6 +180,7 @@ makechroot() {
         einfo "No arch type given, assuming existing chroot"
     else
         spawn "mkdir -p ${chrootbase}" || ewarn "Folder could not be created"
+        gettarball
     fi
 }
 
@@ -201,8 +202,8 @@ gettarball() {
 }
 
 chrootdive() {
-    exec {lock_fd}>${chrootlock} || die "Could not get lock"
-    flock -n "$lock_fd" || die "Could not get lock"
+    exec {lock_fd}>${chrootlock} || die "Could not get fd"
+    flock -n "$lock_fd" || die "Could not get lock on fd"
     spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
     if ! cat /proc/mounts | cut -d' ' -f 2 | grep -q "^${chrootbase}/proc$"; then
         spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
