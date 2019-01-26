@@ -176,10 +176,10 @@ checkchroot() {
 }
 
 makechroot() {
-    if [[ ${arch} == "false" ]]; then
-        einfo "No arch type given, assuming existing chroot"
+    if [[ -d ${chrootbase} ]]; then
+        einfo "Folder exists, assuming existing chroot"
     else
-        spawn "mkdir ${chrootbase}" || die "Folder could not be created or exists!"
+        spawn "mkdir ${chrootbase}" || die "Folder could not be created"
         gettarball
     fi
 }
