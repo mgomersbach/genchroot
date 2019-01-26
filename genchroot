@@ -228,7 +228,7 @@ chrootdive() {
     fi
     if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
         spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
-        spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755" || einfo "Could not mount tmpfs on tmp portage"
+        spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
     fi
     ${SUDO} chroot "${chrootbase}" "${chrootshell}" || die "Could not execute ${chrootshell} in ${chrootbase} environment"
     flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
