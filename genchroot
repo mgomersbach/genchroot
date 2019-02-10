@@ -235,7 +235,7 @@ chrootdive() {
     sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
     sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
     sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' ${chrootbase}/etc/rc.conf > /dev/null
-    ${SUDO} chroot "${chrootbase}" "${chrootshell}" || eerror "Could not execute ${chrootshell} in ${chrootbase} environment"
+    ${SUDO} unshare -p -f --mount-proc="${chrootbase}"/proc chroot "${chrootbase}" "${chrootshell}" || eerror "Could not execute ${chrootshell} in ${chrootbase} environment"
     flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
     spawn "rm ${chrootlock}"
     eend 0
