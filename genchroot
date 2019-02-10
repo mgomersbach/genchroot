@@ -23,18 +23,12 @@
 set -e
 set -o pipefail
 
-# Source Gentoo functions
-if [[ -f /lib/rc/sh/functions.sh ]]; then
-    # shellcheck disable=SC1091
-    . /lib/rc/sh/functions.sh
-elif [[ -f /lib64/rc/sh/functions.sh ]]; then
-    # shellcheck disable=SC1091
-    . /lib64/rc/sh/functions.sh
-else
-     die "No Gentoo functions available, exiting"
-fi
+# Source gentoo functions for output
 # shellcheck disable=SC1091
-. /etc/portage/make.conf
+. /lib/gentoo/functions.sh || return 1
+
+# shellcheck disable=SC1091
+. /etc/portage/make.conf || return 1
 
 # Bring it all together
 main() {
@@ -237,6 +231,10 @@ chrootdive() {
         spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
         spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 tmpfs ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
     fi
+    sed -i -e 's/#rc_sys=""/rc_sys="prefix"/g' ${chrootbase}/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' ${chrootbase}/etc/rc.conf > /dev/null
     ${SUDO} chroot "${chrootbase}" "${chrootshell}" || eerror "Could not execute ${chrootshell} in ${chrootbase} environment"
     flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
     spawn "rm ${chrootlock}"
