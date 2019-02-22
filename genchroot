@@ -230,11 +230,13 @@ chrootdive() {
     if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
         spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
         spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 tmpfs ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
+    else
+        einfo "Not enough mem for tmpfs in chroot, skipping"
     fi
-    sed -i -e 's/#rc_sys=""/rc_sys="prefix"/g' ${chrootbase}/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' ${chrootbase}/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' ${chrootbase}/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_sys=""/rc_sys="prefix"/g' "${chrootbase}"/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' "${chrootbase}"/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' "${chrootbase}"/etc/rc.conf > /dev/null
+    sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' "${chrootbase}"/etc/rc.conf > /dev/null
     ${SUDO} unshare -p -f --mount-proc="${chrootbase}"/proc chroot "${chrootbase}" "${chrootshell}" || ewarn "Non-zero exit code from ${chrootshell} in ${chrootbase}"
     flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
     spawn "rm ${chrootlock}"
