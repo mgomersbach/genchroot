@@ -42,26 +42,28 @@ main() {
 # Set terminal title
 settitle()
 {
-    case ${TERM} in
-        xterm*)
-          # shellcheck disable=SC1117
-          local title="\[\033]0;${*}\007\]"
-        ;;
-        *rxvt*)
-          # shellcheck disable=SC1117
-          local title="\[\033]0;${*}\007\]"
-        ;;
-    esac
-    case $SHELL in
-        *zsh)
-          trap '<<<"\e]0;${@}\007"' DEBUG
-        ;;
-        *bash)
-          local prompt
-          prompt=$(sed -e 's/\\\[\\033\]0;.*\\007\\\]//' <<<"$PS1")
-          PS1="${title}${prompt}"
-        ;;
-    esac
+    if [[ -z $JENKINS_HOME ]]; then
+        case ${TERM} in
+            xterm*)
+            # shellcheck disable=SC1117
+            local title="\[\033]0;${*}\007\]"
+            ;;
+            *rxvt*)
+            # shellcheck disable=SC1117
+            local title="\[\033]0;${*}\007\]"
+            ;;
+        esac
+        case $SHELL in
+            *zsh)
+            trap '<<<"\e]0;${@}\007"' DEBUG
+            ;;
+            *bash)
+            local prompt
+            prompt=$(sed -e 's/\\\[\\033\]0;.*\\007\\\]//' <<<"$PS1")
+            PS1="${title}${prompt}"
+            ;;
+        esac
+    fi
 }
 
 # Split output
