@@ -68,10 +68,10 @@ settitle()
 
 # Split output
 debug() {
-    local func=$1
-    local msg=$2
-    settitle "${msg}"
     if [[ "${debug}" == "true" ]]; then
+        local func=$1
+        local msg=$2
+        settitle "${msg}"
         echo "${func}(): ${msg}" >&2
         esyslog "user.info" "genchroot" "${func}(): ${msg}"
     fi
