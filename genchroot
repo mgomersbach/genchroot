@@ -227,7 +227,7 @@ chrootdive() {
         spawn "chmod 1777 /dev/shm"
     fi
     if [[ -d ${DISTDIR} ]]; then
-        spawn "mount --rbind ${DISTDIR} ${chrootbase}/usr/portage/distfiles" || ewarn "Could not bind distfiles"
+        spawn "mount --rbind ${DISTDIR} ${chrootbase}/var/cache/distfiles" || ewarn "Could not bind distfiles"
     fi
     if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
         spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
@@ -250,7 +250,7 @@ unchroot() {
     spawn "umount -l ${chrootbase}/dev{/shm,/pts,}" || ewarn "Could not umount /dev"
     spawn "umount -l ${chrootbase}/sys" || ewarn "Could not umount /sys"
     spawn "umount -l ${chrootbase}/proc" || ewarn "Could not umount /proc"
-    spawn "umount -l ${chrootbase}/usr/portage/distfiles" || ewarn "Could not umount /usr/portage/distfiles"
+    spawn "umount -l ${chrootbase}/var/cache/distfiles" || ewarn "Could not umount /var/cache/distfiles"
     spawn "umount -l ${chrootbase}/var/tmp/portage" || einfo "Could not umount ${chrootbase}/var/tmp/portage"
     eend 0
 }
