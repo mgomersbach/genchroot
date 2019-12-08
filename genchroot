@@ -229,6 +229,7 @@ chrootdive() {
     if [[ -d ${DISTDIR} ]]; then
         spawn "mount --rbind ${DISTDIR} ${chrootbase}/var/cache/distfiles" || ewarn "Could not bind distfiles"
     fi
+    spawn "echo '1' > /proc/sys/vm/drop_caches" || einfo "Could not drop caches"
     if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
         spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
         spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 tmpfs ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
