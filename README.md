@@ -1,5 +1,7 @@
 # genchroot
 
+[![Build Status](https://travis-ci.com/mgomersbach/genchroot.svg?branch=master)](https://travis-ci.com/mgomersbach/genchroot)
+
 [![Join the chat at https://gitter.im/chinstrap-overlay/Lobby](https://badges.gitter.im/chinstrap-overlay/Lobby.png)](https://gitter.im/chinstrap-overlay/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Chat on freenode](https://img.shields.io/badge/chat-on%20freenode-red.png)](irc://freenode/chinstrap)
 
