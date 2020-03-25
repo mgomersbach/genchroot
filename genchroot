@@ -127,8 +127,8 @@ Usage:
     $0 [options]
 
 Options:
-    -c         Chroot base path
-    -s         Chroot shell/executable/script
+    -c         Chroot base path (default: /mnt/chrootbase)
+    -s         Chroot shell/executable/script (default: bash from path)
     -a         Arch (i.e. amd64)
     -t         Tarball type (i.e. minimal-nomultilib)
     -d         Output debugging messages
@@ -220,11 +220,15 @@ chrootdive() {
         spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
         spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
     fi
-    if [[ -L /dev/shm ]]; then
-        spawn "rm /dev/shm"
-        spawn "mkdir /dev/shm"
-        spawn "mount -t tmpfs -o nosuid,nodev,noexec shm /dev/shm"
-        spawn "chmod 1777 /dev/shm"
+    if [[ -L ${chrootbase}/dev/shm ]]; then
+        spawn "rm ${chrootbase}/dev/shm"
+        spawn "mkdir ${chrootbase}/dev/shm"
+        spawn "mount -t tmpfs -o nosuid,nodev,noexec shm ${chrootbase}/dev/shm"
+        spawn "chmod 1777 ${chrootbase}/dev/shm"
+    fi
+    if [[ -d ${chrootbase}/tmp ]]; then
+        spawn "mount -t tmpfs -o defaults,nosuid tmpfs ${chrootbase}/tmp"
+        spawn "chmod 1777 ${chrootbase}/tmp"
     fi
     if [[ -d ${DISTDIR} ]]; then
         spawn "mount --rbind ${DISTDIR} ${chrootbase}/var/cache/distfiles" || ewarn "Could not bind distfiles"
