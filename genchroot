@@ -252,11 +252,9 @@ chrootdive() {
 
 unchroot() {
     ebegin "Remove mounts"
-    spawn "umount -l ${chrootbase}/dev{/shm,/pts,}" || ewarn "Could not umount /dev"
-    spawn "umount -l ${chrootbase}/sys" || ewarn "Could not umount /sys"
-    spawn "umount -l ${chrootbase}/proc" || ewarn "Could not umount /proc"
-    spawn "umount -l ${chrootbase}/var/cache/distfiles" || ewarn "Could not umount /var/cache/distfiles"
-    spawn "umount -l ${chrootbase}/var/tmp/portage" || einfo "Could not umount ${chrootbase}/var/tmp/portage"
+    grep "${chrootbase}" < /proc/mounts | while read -ra mnt; do 
+        spawn "umount -flR ${mnt[1]}" || ewarn "Could not umount ${mnt[1]}"
+    done
     eend 0
 }
 
