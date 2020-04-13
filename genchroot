@@ -32,58 +32,57 @@ set -o pipefail
 
 # Bring it all together
 main() {
-    local args
-    export args="${*}"
-    checkchroot && chrootdive
-    unchroot
-    exit 0
+  local args
+  export args="${*}"
+  checkchroot && chrootdive
+  unchroot
+  exit 0
 }
 
 # Set terminal title
-settitle()
-{
-    if [[ -z $JENKINS_HOME ]]; then
-        case ${TERM} in
-            xterm*)
-            # shellcheck disable=SC1117
-            local title="\[\033]0;${*}\007\]"
-            ;;
-            *rxvt*)
-            # shellcheck disable=SC1117
-            local title="\[\033]0;${*}\007\]"
-            ;;
-        esac
-        case $SHELL in
-            *zsh)
-            trap '<<<"\e]0;${@}\007"' DEBUG
-            ;;
-            *bash)
-            local prompt
-            prompt=$(sed -e 's/\\\[\\033\]0;.*\\007\\\]//' <<<"$PS1")
-            PS1="${title}${prompt}"
-            ;;
-        esac
-    fi
+settitle() {
+  if [[ -z $JENKINS_HOME ]]; then
+    case ${TERM} in
+      xterm*)
+        # shellcheck disable=SC1117
+        local title="\[\033]0;${*}\007\]"
+        ;;
+      *rxvt*)
+        # shellcheck disable=SC1117
+        local title="\[\033]0;${*}\007\]"
+        ;;
+    esac
+    case $SHELL in
+      *zsh)
+        trap '<<<"\e]0;${@}\007"' DEBUG
+        ;;
+      *bash)
+        local prompt
+        prompt=$(sed -e 's/\\\[\\033\]0;.*\\007\\\]//' <<<"$PS1")
+        PS1="${title}${prompt}"
+        ;;
+    esac
+  fi
 }
 
 # Split output
 debug() {
-    if [[ "${debug}" == "true" ]]; then
-        local func=$1
-        local msg=$2
-        settitle "${msg}"
-        echo "${func}(): ${msg}" >&2
-        esyslog "user.info" "genchroot" "${func}(): ${msg}"
-    fi
+  if [[ ${debug} == "true" ]]; then
+    local func=$1
+    local msg=$2
+    settitle "${msg}"
+    echo "${func}(): ${msg}" >&2
+    esyslog "user.info" "genchroot" "${func}(): ${msg}"
+  fi
 }
 
 # Return 1 after fail
 die() {
-    local msg=$1
-    settitle "${msg}"
-    eerror "${msg}"
-    kill $$
-    exit 1
+  local msg=$1
+  settitle "${msg}"
+  eerror "${msg}"
+  kill $$
+  exit 1
 }
 
 # Argument defaults
@@ -113,16 +112,16 @@ while getopts 'c:s:t:a:b:dhnv' flag; do
 done
 
 if [[ -z ${GENTOO_MIRRORS} ]]; then
-    baseurl="${GENTOO_MIRRORS%% *}"
+  baseurl="${GENTOO_MIRRORS%% *}"
 else
-    baseurl="http://distfiles.gentoo.org/"
+  baseurl="http://distfiles.gentoo.org/"
 fi
 chrootlock="${chrootbase}"/.$(basename "${0}").lock
 logfile="/tmp/$(basename "${0}").log"
 
 # Help message
 usage() {
-    cat <<EOF
+  cat <<EOF
 Usage:
     $0 [options]
 
@@ -140,127 +139,133 @@ EOF
 
 # Check for help
 if [[ ${help} == "true" ]]; then
-    usage
-    exit 0
+  usage
+  exit 0
 fi
 
 # Add sudo if not root
 SUDO=''
-if (( EUID != 0 )); then
-    SUDO='sudo'
+if ((EUID != 0)); then
+  SUDO='sudo'
 fi
 
 # Output router
 spawn() {
-    local cmd="${SUDO} ${1}"
-    settitle "${cmd}"
-    debug spawn "running command '${cmd}'"
-    rm "${logfile}".cur 2>/dev/null
-    if [[ ${verbose} == "true" ]]; then
-        (eval "${cmd}" 2>&1; echo $? > /tmp/spawn_exitcode) | tee -a "${logfile}" "${logfile}".cur
-    else
-        (eval "${cmd}" 2>&1; echo $? > /tmp/spawn_exitcode) | tee -a "${logfile}" "${logfile}".cur >/dev/null 2>&1
-    fi
-    spawn_exitcode=$([[ -f /tmp/spawn_exitcode ]] && cat /tmp/spawn_exitcode)
-    rm /tmp/spawn_exitcode &>/dev/null
+  local cmd="${SUDO} ${1}"
+  settitle "${cmd}"
+  debug spawn "running command '${cmd}'"
+  rm "${logfile}".cur 2>/dev/null
+  if [[ ${verbose} == "true" ]]; then
+    (
+      eval "${cmd}" 2>&1
+      echo $? >/tmp/spawn_exitcode
+    ) | tee -a "${logfile}" "${logfile}".cur
+  else
+    (
+      eval "${cmd}" 2>&1
+      echo $? >/tmp/spawn_exitcode
+    ) | tee -a "${logfile}" "${logfile}".cur >/dev/null 2>&1
+  fi
+  spawn_exitcode=$([[ -f /tmp/spawn_exitcode ]] && cat /tmp/spawn_exitcode)
+  rm /tmp/spawn_exitcode &>/dev/null
 
-    return "${spawn_exitcode}"
+  return "${spawn_exitcode}"
 }
 
 checkchroot() {
-    ebegin "Checking chroot"
-    if [[ -z ${chrootbase} ]]; then
-        die "Filesystem to chroot not set"
-    fi
-    if [[ -z ${chrootshell} ]]; then
-        die "Shell to chroot with not set"
-    fi
-    if [[ -d ${chrootbase} ]]; then
-        einfo "Folder exists, assuming existing chroot"
-    else
-        spawn "mkdir ${chrootbase}" || die "Folder could not be created"
-        gettarball
-    fi
-    eend 0
+  ebegin "Checking chroot"
+  if [[ -z ${chrootbase} ]]; then
+    die "Filesystem to chroot not set"
+  fi
+  if [[ -z ${chrootshell} ]]; then
+    die "Shell to chroot with not set"
+  fi
+  if [[ -d ${chrootbase} ]]; then
+    einfo "Folder exists, assuming existing chroot"
+  else
+    spawn "mkdir ${chrootbase}" || die "Folder could not be created"
+    gettarball
+  fi
+  eend 0
 }
 
 gettarball() {
-    ebegin "Get stage3 and unpack"
-    if ${tarballtype}; then
-        latest=$(wget --quiet "${baseurl}"/releases/"${arch}"/autobuilds/latest-stage3-"${arch}"-"${tarballtype}".txt -O-| tail -n 1 | cut -d " " -f 1)
-    else
-        latest=$(wget --quiet "${baseurl}"/releases/"${arch}"/autobuilds/latest-stage3-"${arch}".txt -O-| tail -n 1 | cut -d " " -f 1)
-    fi
-    if [[ -z "${latest}" ]]; then
-        eerror "Could not find latest tarball" && exit 1
-    fi
-    tarname=$(basename "${latest}")
+  ebegin "Get stage3 and unpack"
+  if ${tarballtype}; then
+    latest=$(wget --quiet "${baseurl}"/releases/"${arch}"/autobuilds/latest-stage3-"${arch}"-"${tarballtype}".txt -O- | tail -n 1 | cut -d " " -f 1)
+  else
+    latest=$(wget --quiet "${baseurl}"/releases/"${arch}"/autobuilds/latest-stage3-"${arch}".txt -O- | tail -n 1 | cut -d " " -f 1)
+  fi
+  if [[ -z ${latest} ]]; then
+    eerror "Could not find latest tarball" && exit 1
+  fi
+  tarname=$(basename "${latest}")
 
-    spawn "wget -q -nc -c --compression=none \"${baseurl}/releases/${arch}/autobuilds/${latest}\" -O \"${chrootbase}/${tarname}\"" || eerror "Could not download stage3 tarball"
-    pushd "${chrootbase}" > /dev/null
-    spawn "tar xpvf \"${tarname}\" --xattrs-include='*.*' --numeric-owner" || eerror "Could not extract stage3"
-    spawn "rm ${tarname}" || einfo "Could not delete stage3 tarball"
-    popd > /dev/null
-    eend 0
+  spawn "wget -q -nc -c --compression=none \"${baseurl}/releases/${arch}/autobuilds/${latest}\" -O \"${chrootbase}/${tarname}\"" || eerror "Could not download stage3 tarball"
+  pushd "${chrootbase}" >/dev/null
+  spawn "tar xpvf \"${tarname}\" --xattrs-include='*.*' --numeric-owner" || eerror "Could not extract stage3"
+  spawn "rm ${tarname}" || einfo "Could not delete stage3 tarball"
+  popd >/dev/null
+  eend 0
 }
 
 chrootdive() {
-    ebegin "Get lock, set mounts and chroot"
-    exec {lock_fd}>"${chrootlock}" || die "Could not get fd"
-    flock -n "$lock_fd" || die "Could not get lock on fd"
-    spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
-    if ! cut -d' ' -f 2 < /proc/mounts | grep -q "^${chrootbase}/proc$"; then
-        spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
-    fi
-    if ! cut -d' ' -f 2 < /proc/mounts | grep -q "^${chrootbase}/sys$"; then
-        spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
-        spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
-    fi
-    if ! cut -d' ' -f 2 < /proc/mounts | grep -q "^${chrootbase}/dev$" ; then
-        spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
-        spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
-    fi
-    if [[ -L ${chrootbase}/dev/shm ]]; then
-        spawn "rm ${chrootbase}/dev/shm"
-        spawn "mkdir ${chrootbase}/dev/shm"
-        spawn "mount -t tmpfs -o nosuid,nodev,noexec shm ${chrootbase}/dev/shm"
-        spawn "chmod 1777 ${chrootbase}/dev/shm"
-    fi
-    if [[ -d ${chrootbase}/tmp ]]; then
-        spawn "mount -t tmpfs -o defaults,nosuid tmpfs ${chrootbase}/tmp"
-        spawn "chmod 1777 ${chrootbase}/tmp"
-    fi
-    if [[ -d ${DISTDIR} ]]; then
-        spawn "mount --rbind ${DISTDIR} ${chrootbase}/var/cache/distfiles" || ewarn "Could not bind distfiles"
-    fi
-    spawn "echo '1' > /proc/sys/vm/drop_caches" || einfo "Could not drop caches"
-    if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
-        spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
-        spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 tmpfs ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
-    else
-        einfo "Not enough mem for tmpfs in chroot, skipping"
-    fi
-    sed -i -e 's/#rc_sys=""/rc_sys="prefix"/g' "${chrootbase}"/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' "${chrootbase}"/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' "${chrootbase}"/etc/rc.conf > /dev/null
-    sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' "${chrootbase}"/etc/rc.conf > /dev/null
-    ${SUDO} unshare -p -f --mount-proc="${chrootbase}"/proc chroot "${chrootbase}" "${chrootshell}" || ewarn "Non-zero exit code from ${chrootshell} in ${chrootbase}"
-    flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
-    spawn "rm ${chrootlock}"
-    eend 0
+  ebegin "Get lock, set mounts and chroot"
+  exec {lock_fd}>"${chrootlock}" || die "Could not get fd"
+  flock -n "$lock_fd" || die "Could not get lock on fd"
+  spawn "cp --dereference /etc/resolv.conf ${chrootbase}/etc/" || ewarn "Could not copy over resolv.conf"
+  if ! cut -d' ' -f 2 </proc/mounts | grep -q "^${chrootbase}/proc$"; then
+    spawn "mount --types proc /proc ${chrootbase}/proc" || die "Could not mount proc"
+  fi
+  if ! cut -d' ' -f 2 </proc/mounts | grep -q "^${chrootbase}/sys$"; then
+    spawn "mount --rbind /sys ${chrootbase}/sys" || die "Could not mount sys"
+    spawn "mount --make-rslave ${chrootbase}/sys" || ewarn "Could not slave sys"
+  fi
+  if ! cut -d' ' -f 2 </proc/mounts | grep -q "^${chrootbase}/dev$"; then
+    spawn "mount --rbind /dev ${chrootbase}/dev" || die "Could not mount dev"
+    spawn "mount --make-rslave ${chrootbase}/dev" || ewarn "Could not slave dev"
+  fi
+  if [[ -L ${chrootbase}/dev/shm ]]; then
+    spawn "rm ${chrootbase}/dev/shm"
+    spawn "mkdir ${chrootbase}/dev/shm"
+    spawn "mount -t tmpfs -o nosuid,nodev,noexec shm ${chrootbase}/dev/shm"
+    spawn "chmod 1777 ${chrootbase}/dev/shm"
+  fi
+  if [[ -d ${chrootbase}/tmp ]]; then
+    spawn "mount -t tmpfs -o defaults,nosuid tmpfs ${chrootbase}/tmp"
+    spawn "chmod 1777 ${chrootbase}/tmp"
+  fi
+  if [[ -d ${DISTDIR} ]]; then
+    spawn "mount --rbind ${DISTDIR} ${chrootbase}/var/cache/distfiles" || ewarn "Could not bind distfiles"
+  fi
+  spawn "echo '1' > /proc/sys/vm/drop_caches" || einfo "Could not drop caches"
+  if [[ $(awk '/MemFree/ {print $2}' /proc/meminfo) -ge 16777216 ]]; then
+    spawn "mkdir -p ${chrootbase}/var/tmp/portage" || einfo "Could not create tmp portage"
+    spawn "mount -t tmpfs -o rw,nosuid,nodev,noatime,mode=755 tmpfs ${chrootbase}/var/tmp/portage" || einfo "Could not mount tmpfs on tmp portage"
+  else
+    einfo "Not enough mem for tmpfs in chroot, skipping"
+  fi
+  sed -i -e 's/#rc_sys=""/rc_sys="prefix"/g' "${chrootbase}"/etc/rc.conf >/dev/null
+  sed -i -e 's/#rc_controller_cgroups="YES"/rc_controller_cgroups="NO"/g' "${chrootbase}"/etc/rc.conf >/dev/null
+  sed -i -e 's/#rc_depend_strict="YES"/rc_depend_strict="NO"/g' "${chrootbase}"/etc/rc.conf >/dev/null
+  sed -i -e 's/#rc_need="openvpn"/rc_need="!net !dev !udev-mount !sysfs !checkfs !fsck !netmount !logger !clock !modules"/g' "${chrootbase}"/etc/rc.conf >/dev/null
+  ${SUDO} unshare -p -f --mount-proc="${chrootbase}"/proc chroot "${chrootbase}" "${chrootshell}" || ewarn "Non-zero exit code from ${chrootshell} in ${chrootbase}"
+  flock -u "$lock_fd" || eerror "Could not remove lock at ${chrootlock}"
+  spawn "rm ${chrootlock}"
+  eend 0
 }
 
 unchroot() {
-    ebegin "Remove mounts"
-    grep "${chrootbase}" < /proc/mounts | while read -ra mnt; do 
-        spawn "umount -flR ${mnt[1]}" || ewarn "Could not umount ${mnt[1]}"
-    done
-    eend 0
+  ebegin "Remove mounts"
+  grep "${chrootbase}" </proc/mounts | while read -ra mnt; do
+    spawn "umount -flR ${mnt[1]}" || ewarn "Could not umount ${mnt[1]}"
+  done
+  eend 0
 }
 
 # nocolor overwrites output module
-[[ "${nocolor}" == "true" ]] && unset GOOD WARN BAD HILITE BRACKET NORMAL
+[[ ${nocolor} == "true" ]] && unset GOOD WARN BAD HILITE BRACKET NORMAL
 
-if [[ "$0" == "${BASH_SOURCE[*]}" ]] ; then
-    main "${@}"
+if [[ $0 == "${BASH_SOURCE[*]}" ]]; then
+  main "${@}"
 fi
